@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="utf-8" />
+  <meta content="width=device-width, initial-scale=1, viewport-fit=cover" name="viewport" />
+  <title>Pedidos UP Electronics</title>
+  <link href="style.css" rel="stylesheet" />
+  <!-- Biblioteca para gerar PDF (jsPDF) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+
+<body>
+
+  <header class="header" id="hdr">
+    <div class="header-inner">
+      <div class="logo"><img alt="UP Electronics Logo" src="https://placehold.co/150x40/0b0b0f/00d4ff?text=UP+Electronics&font=sans" /></div>
+      <div class="title">
+        <h1>UP Electronics</h1>
+        <p>Selecione um produto e envie o pedido diretamente</p>
+      </div>
+      <button class="cart-button" id="btn-carrinho" aria-label="Ver carrinho de pedidos">
+        🛒
+        <span class="cart-count" id="cart-count">0</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Campos de Dados do Cliente -->
+  <section class="client-info">
+    <div class="row two">
+      <div>
+        <label for="cliente-nome">Nome do Cliente*</label>
+        <input id="cliente-nome" type="text" placeholder="Digite o nome do cliente" />
+      </div>
+      <div>
+        <label for="cliente-cnpj">CNPJ*</label>
+        <input id="cliente-cnpj" type="text" placeholder="Digite o numero do CNPJ" />
+      </div>
+    </div>
+    <div class="row two">
+      <div>
+        <label for="representante-comercial">Representante Comercial*</label>
+        <input id="representante-comercial" type="text" placeholder="Digite o nome do representante" />
+      </div>
+      <div>
+        <label for="cliente-responsavel">Responsável:</label>
+        <input id="cliente-responsavel" type="text" placeholder="Digite o nome do responsavel" />
+      </div>
+    </div>
+  </section>
+
+  <!-- Barra de busca, filtro e limpar filtros -->
+  <section class="toolbar">
+    <input aria-label="Buscar" class="search" id="q" placeholder="Buscar por nome do produto" type="search" />
+    <select aria-label="Filtrar por categoria" class="select" id="cat">
+      <option value="">Todas as categorias</option>
+      <option value="Acessorios">Acessórios</option>
+      <option value="Cabo de 1 metro">Cabo de 1 metro</option>
+      <option value="Cabo de 2 metros">Cabo de 2 metros</option>
+      <option value="Carregador de parede">Carregador de parede</option>
+      <option value="Carregador veicular">Carregador veicular</option>
+      <option value="Lixeira Automotiva">Lixeira Automotiva</option>
+    </select>
+    <button class="button btn-ghost" id="limpar">Limpar filtros</button>
+  </section>
+
+  <!-- Grid de Produtos -->
+  <main class="grid" id="grid"></main>
+
+  <!-- =================================== -->
+  <!--     Modal Adicionar Item (#bk)    -->
+  <!-- =================================== -->
+  <div class="modal-backdrop" id="bk">
+    <div aria-labelledby="tituloModal" aria-modal="true" class="modal" role="dialog">
+      <div class="modal-header">
+        <div class="modal-title" id="tituloModal">Adicionar Produto</div>
+        <button aria-label="Fechar" class="btn-ghost" id="fechar">Fechar</button>
+      </div>
+      <div class="modal-body">
+        
+        <!-- Detalhes do Produto -->
+        <div class="row two">
+          <div>
+            <label>Produto</label>
+            <input id="m-produto" readonly="" type="text" />
+          </div>
+          <div>
+            <label>Código (SKU) // GTIN</label>
+            <input id="m-cod" readonly="" type="text" />
+          </div>
+        </div>
+        <div class="row two">
+          <div>
+            <label>Categoria</label>
+            <input id="m-cat" readonly="" type="text" />
+          </div>
+          <div>
+            <label>Quantidade*</label>
+            <input id="m-qtd" inputmode="numeric" min="1" step="1" type="number" value="1" />
+          </div>
+        </div>
+
+        <!-- NOVO: Campo Valor do Item -->
+        <div class="row two">
+          <div>
+            <label>Valor (R$)*</label>
+            <input id="m-valor" inputmode="decimal" placeholder="Ex: 25,50" type="text" />
+          </div>
+          <div>
+            <label>Observação (opcional)</label>
+            <input autocomplete="off" id="m-obs" placeholder="Digite a observação para este item" type="text" />
+          </div>
+        </div>
+        
+        <!-- REMOVIDO: Campo Telefone (opcional) -->
+
+        <div class="modal-actions">
+          <button class="btn" id="btn-adicionar">Adicionar ao pedido</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =================================== -->
+  <!--     Modal Checkout (#bk-checkout)   -->
+  <!-- =================================== -->
+  <div class="modal-backdrop" id="bk-checkout" style="display: none;">
+    <div aria-labelledby="tituloModalCheckout" aria-modal="true" class="modal modal-checkout" role="dialog">
+      <div class="modal-header">
+        <div class="modal-title" id="tituloModalCheckout">Revisar Pedido</div>
+        <button aria-label="Fechar" class="btn-ghost" id="btn-fechar-checkout">Fechar</button>
+      </div>
+      <div class="modal-body">
+        <div id="cart-items-list">
+          <!-- Itens do carrinho renderizados pelo JS -->
+        </div>
+        <div id="cart-empty-msg" style="display: none; padding: 20px; text-align: center; color: var(--muted);">
+          Seu carrinho de pedidos está vazio.
+        </div>
+        
+        <!-- Ações do Checkout (Lado a Lado) -->
+        <div class="modal-actions checkout-actions">
+          <button class="btn" id="btn-gerar-pdf">Gerar PDF</button>
+          <button class="btn btn-whats" id="btn-enviar-checkout">Enviar Pedido via WhatsApp</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast (Notificação) -->
+  <div aria-live="polite" class="toast" id="toast" role="status"></div>
+
+  <script src="products.js"></script>
+  <script src="script.js"></script>
+</body>
+
+</html>
+
+
