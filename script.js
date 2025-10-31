@@ -403,7 +403,7 @@ Obs: ${item.obs}` : '') +
   linhas.push(`*VALOR TOTAL DO PEDIDO: ${formatCurrency(totalGeral)}*`);
 
   linhas.push('');
-  linhas.push('— Enviado via App de Pedidos UP (com carrinho)');
+  linhas.push('— Enviado via App de Pedidos UP Electronics —');
   return linhas.join('\n');
 }
 
