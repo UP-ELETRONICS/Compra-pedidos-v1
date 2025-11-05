@@ -23,9 +23,8 @@ const mProduto = document.getElementById('m-produto');
 const mCod = document.getElementById('m-cod');
 const mCat = document.getElementById('m-cat');
 const mQtd = document.getElementById('m-qtd');
-const mValor = document.getElementById('m-valor'); // NOVO: Campo Valor
+const mValor = document.getElementById('m-valor');
 const mObs = document.getElementById('m-obs');
-// REMOVIDO: mItemTel
 
 // --- Modal de Checkout (#bk-checkout) ---
 const bkCheckout = document.getElementById('bk-checkout');
@@ -33,7 +32,9 @@ const btnFecharCheckout = document.getElementById('btn-fechar-checkout');
 const cartItemsList = document.getElementById('cart-items-list');
 const cartEmptyMsg = document.getElementById('cart-empty-msg');
 const btnEnviarCheckout = document.getElementById('btn-enviar-checkout');
-const btnGerarPdf = document.getElementById('btn-gerar-pdf'); // NOVO: Botão PDF
+const btnGerarPdf = document.getElementById('btn-gerar-pdf');
+const cartTotalValue = document.getElementById('cart-total-value');
+const checkoutObs = document.getElementById('checkout-obs');
 
 // --- Carrinho (Header) ---
 const btnAdicionar = document.getElementById('btn-adicionar');
@@ -43,6 +44,10 @@ const cartCount = document.getElementById('cart-count');
 // --- UI ---
 const toast = document.getElementById('toast');
 const hdr = document.getElementById('hdr');
+
+// --- Zoom Overlay ---
+const zoomOverlay = document.getElementById('zoom-overlay');
+const zoomOverlayImg = document.getElementById('zoom-overlay-img');
 
 // --- Estado Global ---
 let carrinho = []; // Agora armazena objetos de produto
@@ -84,9 +89,17 @@ function debounce(fn, delay = 200) {
   };
 }
 
-// NOVO: Função para formatar moeda
+// Função para detectar se é um dispositivo móvel
+function isMobile() {
+  try {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  } catch(e) {
+    return false;
+  }
+}
+
+// Função para formatar moeda
 function formatCurrency(value) {
-  // Converte para número, garantindo que é um float
   const numberValue = parseFloat(value) || 0;
   return numberValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
@@ -102,7 +115,11 @@ function productCard(p, term) {
   const compat = p.compatibilidade || '';
   return `
     <article class="card" data-nome="${p.produto}" data-cod="${p.codigo}" data-cat="${p.categoria}">
-      <div class="card-img"><img loading="lazy" src="${img || 'https://placehold.co/220x220/2a2a38/b7b7c9?text=Imagem'}" alt="${p.produto}"></div>
+      <div class="card-img">
+        <img loading="lazy" 
+             src="${img || 'https://placehold.co/220x220/2a2a38/b7b7c9?text=Imagem'}" 
+             alt="${p.produto}">
+      </div>
       <div class="card-body">
         <div class="name">${hi(p.produto, term)}</div>
         <div class="sku">SKU: <span>${hi(p.codigo || '-', term)}</span></div>
@@ -120,7 +137,8 @@ function render(list, term = '') {
 function applyFilters() {
   const term = norm(q.value);
   const c = cat.value;
-  let list = produtos; // 'produtos' vem do 'products.js'
+  // CORREÇÃO: Garante que 'produtos' exista, mesmo que vazio
+  let list = window.produtos || []; 
 
   if (c) list = list.filter(p => p.categoria === c);
 
@@ -199,7 +217,6 @@ function validateAdicionar() {
   const qtd = parseInt(mQtd.value, 10);
   if (!(qtd > 0)) return 'Quantidade inválida (deve ser 1 ou mais).';
   
-  // Usa parseFloat para aceitar centavos (ex: 25,50)
   const valor = parseFloat(mValor.value.replace(',', '.')) || 0;
   if (!(valor > 0)) return 'Valor do item inválido.';
   
@@ -215,8 +232,7 @@ function adicionarAoCarrinho() {
   const sku = mCod.value;
   const valor = parseFloat(mValor.value.replace(',', '.')) || 0;
 
-  // Usa um ID único para cada *linha* do carrinho, permitindo
-  // o mesmo SKU com observações ou valores diferentes.
+  // Usa um ID único para cada *linha* do carrinho
   const produto = {
     id: crypto.randomUUID(), // ID único para esta entrada
     nome: mProduto.value,
@@ -224,8 +240,7 @@ function adicionarAoCarrinho() {
     categoria: mCat.value,
     quantidade: quantidade,
     valor: valor,
-    obs: mObs.value,
-    tel: '' // Campo telefone removido
+    obs: mObs.value
   };
 
   carrinho.push(produto);
@@ -247,6 +262,15 @@ function atualizarContadorCarrinho() {
   const totalItens = carrinho.reduce((total, item) => total + item.quantidade, 0);
   cartCount.textContent = totalItens;
   cartCount.style.display = totalItens > 0 ? 'grid' : 'none';
+  atualizarValorTotal(); 
+}
+
+/** Calcula e exibe o valor total do pedido. */
+function atualizarValorTotal() {
+  const totalGeral = carrinho.reduce((total, item) => total + (item.valor * item.quantidade), 0);
+  if (cartTotalValue) {
+    cartTotalValue.textContent = formatCurrency(totalGeral);
+  }
 }
 
 /** Abre o modal de checkout. */
@@ -280,6 +304,7 @@ function __trapKeydownCheckout(e) {
   else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
 }
 
+
 /** Renderiza os itens do carrinho no modal de checkout. */
 function renderizarCarrinho() {
   if (carrinho.length === 0) {
@@ -293,7 +318,6 @@ function renderizarCarrinho() {
     btnEnviarCheckout.disabled = false;
     btnGerarPdf.disabled = false;
 
-    // Mostra todos os detalhes, incluindo o input de quantidade
     cartItemsList.innerHTML = carrinho.map(item => `
       <div class="cart-item">
         <div class="cart-item-info">
@@ -318,6 +342,7 @@ function renderizarCarrinho() {
       </div>
     `).join('');
   }
+  atualizarValorTotal();
 }
 
 /** Remove um item do carrinho pelo ID único. */
@@ -370,6 +395,7 @@ function buildCheckoutMessage() {
   const hCnpj = clienteCnpj.value || 'Não informado';
   const hRep = representanteComercial.value || 'Não informado';
   const hResp = clienteResponsavel.value || 'Não informado';
+  const obsGerais = checkoutObs.value.trim() || 'Nenhuma';
 
   const linhas = [
     'Pedido UP Electronics',
@@ -380,6 +406,8 @@ function buildCheckoutMessage() {
     `CNPJ: ${hCnpj}`,
     `Representante: ${hRep}`,
     `Responsável: ${hResp}`,
+    '',
+    `Observações Gerais: ${obsGerais}`,
     '',
     'Itens do Pedido:',
     '====================',
@@ -398,7 +426,6 @@ Obs: ${item.obs}` : '') +
     );
   });
   
-  // Calcula o total geral
   const totalGeral = carrinho.reduce((total, item) => total + (item.valor * item.quantidade), 0);
   linhas.push(`*VALOR TOTAL DO PEDIDO: ${formatCurrency(totalGeral)}*`);
 
@@ -409,10 +436,13 @@ Obs: ${item.obs}` : '') +
 
 /** Envia o pedido final. */
 function enviarPedidoCheckout() {
-  if (!validateCheckout()) return; // Validação primeiro
+  if (!validateCheckout()) return; 
 
   const texto = buildCheckoutMessage();
-  const url = 'https://wa.me/?text=' + encodeURIComponent(texto);
+  
+  const isMobileDevice = isMobile();
+  const baseUrl = isMobileDevice ? 'whatsapp://send?text=' : 'https://wa.me/?text=';
+  const url = baseUrl + encodeURIComponent(texto);
 
   const __w = window.open(url, '_blank');
   try { if (__w) __w.opener = null; } catch (_) {}
@@ -423,30 +453,151 @@ function enviarPedidoCheckout() {
 
 /** Gera o PDF do pedido. */
 async function gerarPDF() {
-  if (!validateCheckout()) return; // Mesma validação
+  if (!validateCheckout()) return;
 
-  // Espera a biblioteca jsPDF estar pronta (ela é carregada no <head>)
+  // Espera a biblioteca jsPDF estar pronta
   if (typeof jspdf === 'undefined' || typeof jspdf.jsPDF === 'undefined') {
     showToast('Erro: Biblioteca de PDF não carregou. Recarregue.', true);
     return;
   }
   const { jsPDF } = jspdf;
   const doc = new jsPDF();
-  
-  // Pega o texto formatado para o PDF (é o mesmo do WhatsApp)
-  const textoDoPedido = buildCheckoutMessage();
-  
-  // Adiciona o texto formatado ao PDF
+  let y = 15; // Posição Y inicial (vertical)
+
+  // --- 1. Dados do Pedido ---
+  const hNome = clienteNome.value || 'Não informado';
+  const hCnpj = clienteCnpj.value || 'Não informado';
+  const hRep = representanteComercial.value || 'Não informado';
+  const hResp = clienteResponsavel.value || 'Não informado';
+  const obsGerais = checkoutObs.value.trim() || 'Nenhuma';
+  const totalGeral = carrinho.reduce((total, item) => total + (item.valor * item.quantidade), 0);
+
+  // --- 2. Título ---
+  doc.setFont("Helvetica", "bold");
+  doc.setFontSize(16);
+  doc.text("Pedido UP Electronics", 10, y);
+  y += 7;
+  doc.line(10, y, 200, y); // Linha horizontal
+  y += 10;
+
+  // --- 3. Dados do Cliente ---
+  doc.setFont("Helvetica", "bold");
+  doc.setFontSize(12);
+  doc.text("Dados do Cliente:", 10, y);
+  y += 7;
+
   doc.setFont("Helvetica", "normal");
   doc.setFontSize(10);
-  doc.text(textoDoPedido, 10, 10);
+  // Layout em duas colunas para os dados do cliente
+  doc.text(`Nome: ${hNome}`, 10, y);
+  doc.text(`CNPJ: ${hCnpj}`, 105, y);
+  y += 7;
+  doc.text(`Representante: ${hRep}`, 10, y);
+  doc.text(`Responsável: ${hResp}`, 105, y);
+  y += 10;
+  
+  doc.line(10, y, 200, y); // Linha horizontal
+  y += 10;
 
-  // Adiciona marca d'água de data/hora
-  const data = new Date().toLocaleString('pt-BR', { 
-    dateStyle: 'short', 
-    timeStyle: 'short' 
+  // --- 4. Cabeçalho da Tabela de Itens ---
+  doc.setFont("Helvetica", "bold");
+  doc.setFontSize(10);
+  doc.text("Itens do Pedido:", 10, y);
+  y += 7;
+
+  // Definição das posições X (horizontal) das colunas
+  const colNome = 10;
+  const colSKU = 80;
+  const colQtd = 120;
+  const colVlrUnit = 145;
+  const colVlrTotal = 175;
+
+  doc.setFont("Helvetica", "bold");
+  doc.text("Nome do produto", colNome, y);
+  doc.text("SKU", colSKU, y);
+  doc.text("Qtd.", colQtd, y, { align: 'right' });
+  doc.text("Vlr. Unit.", colVlrUnit, y, { align: 'right' });
+  doc.text("Vlr. Total", colVlrTotal, y, { align: 'right' });
+  y += 3;
+  doc.line(10, y, 200, y); // Linha horizontal
+  y += 7;
+
+  // --- 5. Corpo da Tabela de Itens (Loop) ---
+  doc.setFont("Helvetica", "normal");
+  doc.setFontSize(9); // Fonte menor para os itens
+
+  for (const item of carrinho) {
+    // Quebra a linha se o nome do produto for muito longo
+    const nomeLines = doc.splitTextToSize(item.nome, (colSKU - colNome - 5)); // Largura da coluna nome
+    
+    const vlrUnitStr = formatCurrency(item.valor);
+    const vlrTotalStr = formatCurrency(item.valor * item.quantidade);
+
+    // Desenha os dados do item nas colunas
+    doc.text(nomeLines, colNome, y);
+    doc.text(item.sku, colSKU, y);
+    doc.text(String(item.quantidade), colQtd, y, { align: 'right' });
+    doc.text(vlrUnitStr, colVlrUnit, y, { align: 'right' });
+    doc.text(vlrTotalStr, colVlrTotal, y, { align: 'right' });
+
+    // Ajusta a altura Y baseado no número de linhas do nome
+    const lineHeight = 5; // Altura aproximada da linha
+    y += (nomeLines.length * lineHeight);
+
+    // Adiciona observação do item, se existir
+    if (item.obs) {
+      doc.setFont("Helvetica", "italic");
+      doc.setFontSize(8);
+      doc.setTextColor(100); // Cinza
+      doc.text(`Obs: ${item.obs}`, colNome + 2, y); // Indentado
+      y += lineHeight;
+      doc.setFont("Helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(0); // Preto
+    }
+
+    y += 3; // Espaçamento entre linhas de produtos
+
+    // Verifica se precisa de uma nova página
+    if (y > 280) {
+      doc.addPage();
+      y = 15; // Reinicia o Y no topo da nova página
+      // (Opcional: Redesenhar o cabeçalho da tabela na nova página)
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(10);
+      doc.text("Nome do produto", colNome, y);
+      doc.text("SKU", colSKU, y);
+      doc.text("Qtd.", colQtd, y, { align: 'right' });
+      doc.text("Vlr. Unit.", colVlrUnit, y, { align: 'right' });
+      doc.text("Vlr. Total", colVlrTotal, y, { align: 'right' });
+      y += 3;
+      doc.line(10, y, 200, y);
+      y += 7;
+      doc.setFont("Helvetica", "normal");
+      doc.setFontSize(9);
+    }
+  }
+
+  // --- 6. Rodapé do Pedido (Observações e Total) ---
+  y += 5;
+  doc.line(10, y, 200, y);
+  y += 7;
+
+  doc.setFont("Helvetica", "normal");
+  doc.setFontSize(10);
+  doc.text(`Observações Gerais: ${obsGerais}`, 10, y);
+  y += 10;
+
+  doc.setFont("Helvetica", "bold");
+  doc.setFontSize(12);
+  doc.text(`VALOR TOTAL DO PEDIDO: ${formatCurrency(totalGeral)}`, colVlrTotal + 25, y, { align: 'right' }); // Alinhado à direita da página
+
+  // --- 7. Marca d'água de Data/Hora ---
+  const data = new Date().toLocaleString('pt-BR', {
+    dateStyle: 'short',
+    timeStyle: 'short'
   });
-  doc.setTextColor(150); // Cor cinza
+  doc.setTextColor(150); // Cinza
   doc.setFontSize(8);
   doc.text(
     `Gerado em: ${data}`,
@@ -454,9 +605,9 @@ async function gerarPDF() {
     doc.internal.pageSize.height - 10
   );
 
-  // Salva o arquivo
+  // --- 8. Salvar o PDF ---
   try {
-    doc.save(`pedido-${clienteNome.value || 'cliente'}.pdf`);
+    doc.save(`pedido-${hNome || 'cliente'}.pdf`);
     showToast('Gerando PDF...');
   } catch (e) {
     console.error("Erro ao gerar PDF:", e);
@@ -472,20 +623,39 @@ async function gerarPDF() {
  */
 
 let toastTimer;
-function showToast(msg, isErr = false) { // Padrão é não ser erro
+function showToast(msg, isErr = false) {
   clearTimeout(toastTimer);
   toast.textContent = msg;
   toast.style.display = 'block';
-  toast.style.borderColor = isErr ? 'var(--err)' : 'var(--ok)'; // Verde para sucesso
-  toast.style.background = isErr ? 'var(--err)' : '#0f172a'; // Fundo vermelho para erro
+  toast.style.borderColor = isErr ? 'var(--err)' : 'var(--ok)';
+  toast.style.background = isErr ? 'var(--err)' : '#0f172a';
   toast.style.color = isErr ? '#FFF' : '#e2e8f0';
   
-  toastTimer = setTimeout(() => toast.style.display = 'none', 3000); // 3 segundos
+  toastTimer = setTimeout(() => toast.style.display = 'none', 3000);
 }
 
 function onScroll() {
   if (window.scrollY > 8) hdr.classList.add('compact');
   else hdr.classList.remove('compact');
+}
+
+// Funções de Zoom
+function showZoom(e) {
+  const cardImg = e.target.closest('.card-img');
+  if (!cardImg) return;
+  
+  const img = cardImg.querySelector('img');
+  if (!img || !img.src || img.src.includes('placehold.co')) return; // Não dá zoom em placeholder
+
+  e.preventDefault(); 
+  
+  zoomOverlayImg.src = img.src;
+  zoomOverlay.classList.add('visible');
+}
+
+function hideZoom() {
+  zoomOverlay.classList.remove('visible');
+  setTimeout(() => { zoomOverlayImg.src = ''; }, 200);
 }
 
 /*
@@ -514,13 +684,26 @@ function setupEventListeners() {
     mProduto.value = card.dataset.nome || '';
     mCod.value = card.dataset.cod || '';
     mCat.value = card.dataset.cat || '';
-    // Reseta os campos do modal
     mQtd.value = 1;
-    mValor.value = '';
+    mValor.value = ''; // Reseta campos do item
     mObs.value = '';
-    // mItemTel.value = ''; // Não existe mais
     openModal();
   });
+  
+  // --- Grid (Zoom da Imagem) ---
+  // Diferencia eventos de toque e mouse para melhor performance mobile
+  if (isMobile()) {
+    grid.addEventListener('touchstart', showZoom, { passive: true });
+  } else {
+    grid.addEventListener('mousedown', showZoom);
+  }
+
+  // --- Eventos para fechar o zoom ---
+  zoomOverlay.addEventListener('mouseup', hideZoom);
+  zoomOverlay.addEventListener('mouseleave', hideZoom);
+  zoomOverlay.addEventListener('touchend', hideZoom);
+  zoomOverlay.addEventListener('touchcancel', hideZoom);
+  zoomOverlay.addEventListener('click', hideZoom); // Fallback de clique
 
   // --- Modal de Item (Ações) ---
   btnAdicionar.addEventListener('click', adicionarAoCarrinho);
@@ -530,13 +713,15 @@ function setupEventListeners() {
   });
 
   // --- Helpers de Formulário (Máscaras e Validações) ---
-  // mItemTel.addEventListener('input', () => { // Não existe mais
-  //   mItemTel.value = maskTelBR(mItemTel.value);
-  // });
-  
-  // NOVO: Validação do CNPJ (remove letras)
   clienteCnpj.addEventListener('input', () => {
+    // Remove qualquer letra
     clienteCnpj.value = clienteCnpj.value.replace(/[a-zA-Z]/g, '');
+  });
+  
+  mValor.addEventListener('input', () => {
+     let v = mValor.value.replace(/[^0-9,.]/g, '');
+     v = v.replace('.', ',');
+     mValor.value = v;
   });
 
   // --- Efeitos de UI ---
@@ -551,7 +736,6 @@ function setupEventListeners() {
     if (e.target === bkCheckout) closeCheckoutModal();
   });
   
-  // Ações de Envio e PDF
   btnEnviarCheckout.addEventListener('click', enviarPedidoCheckout);
   btnGerarPdf.addEventListener('click', gerarPDF);
 
@@ -578,20 +762,20 @@ function setupEventListeners() {
     if (e.key === 'Escape') {
       closeModal();
       closeCheckoutModal();
+      hideZoom();
     }
   });
 }
 
 /** Função principal de inicialização. */
 function init() {
-  // CORREÇÃO: Define 'produtos' como um array vazio se 'products.js' não for carregado.
-  // Isso evita que o script quebre se o arquivo estiver faltando.
+  // Garante que 'produtos' exista, mesmo que vazio
   if (typeof produtos === 'undefined') {
     console.warn('Arquivo "products.js" não encontrado. Carregando com 0 produtos.');
-    window.produtos = []; // Define globalmente como um array vazio
+    window.produtos = []; 
   }
   
-  // CORREÇÃO: Verifica a biblioteca jsPDF
+  // Verifica se o jsPDF foi carregado
   if (typeof jspdf === 'undefined' || typeof jspdf.jsPDF === 'undefined') {
     console.error('jsPDF não foi carregado a tempo.');
     // Tenta carregar novamente se falhou
@@ -600,7 +784,6 @@ function init() {
     document.head.appendChild(script);
     script.onload = () => {
       console.log("jsPDF carregado dinamicamente.");
-      // Tenta iniciar novamente após o carregamento
       if (typeof window.jspdf === 'undefined') {
          alert('Erro ao carregar biblioteca de PDF. Recarregue a página.');
       }
@@ -615,7 +798,6 @@ function init() {
 }
 
 // Inicia o app
-// Espera o DOM estar pronto para garantir que todos os elementos existam
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', init);
 } else {
