@@ -49,11 +49,14 @@ const hdr = document.getElementById('hdr');
 const zoomOverlay = document.getElementById('zoom-overlay');
 const zoomOverlayImg = document.getElementById('zoom-overlay-img');
 
+// --- Constantes Globais ---
+const SKU_CURINGA = 'PRODUTO-AVULSO'; // SKU especial para o item curinga
+
 // --- Estado Global ---
 let carrinho = []; // Agora armazena objetos de produto
 let __modalOpener = null;
 let __trapHandler = null;
-
+// A variável 'produtos' será carregada do 'products.js'
 
 /*
  * =========================================
@@ -74,7 +77,7 @@ function escapeHtml(s) {
 function hi(text, term) {
   if (!term) return escapeHtml(text || '');
   const re = new RegExp('(' + (term || '').replace(/[.*+?^${}()|[\\]\\]/g, '\\$&') + ')', 'ig');
-  return escapeHtml(text || '').replace(re, '<mark>$1</mark>');
+  return (s || '').toString().toLowerCase();
 }
 
 function norm(s) {
@@ -102,6 +105,39 @@ function isMobile() {
 function formatCurrency(value) {
   const numberValue = parseFloat(value) || 0;
   return numberValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function maskCNPJ(v) {
+  // 1. Remove tudo que não for letra ou número
+  // v = (v || '').replace(/\D/g, ''); // Permite só numeros
+  v = (v || '').replace(/[^a-zA-Z0-9]/g, ''); // Permite letras e numeros
+
+  // 2. Limita a 14 caracteres
+  v = v.slice(0, 14);
+
+  // 3. Aplica a máscara em etapas (do mais longo para o mais curto)
+  // Isso evita que o Backspace fique "preso"
+  
+  // 14 chars: 12.345.678/9012-34
+  if (v.length > 12) {
+    v = v.replace(/^(\w{2})(\w{3})(\w{3})(\w{4})(\w{2})/, '$1.$2.$3/$4-$5');
+  } 
+  // 9-12 chars: 12.345.678/9012
+  else if (v.length > 8) {
+    v = v.replace(/^(\w{2})(\w{3})(\w{3})(\w{1,4})/, '$1.$2.$3/$4');
+  } 
+  // 6-8 chars: 12.345.678
+  else if (v.length > 5) {
+    v = v.replace(/^(\w{2})(\w{3})(\w{1,3})/, '$1.$2.$3');
+  } 
+  // 3-5 chars: 12.345
+  else if (v.length > 2) {
+    v = v.replace(/^(\w{2})(\w{1,3})/, '$1.$2');
+  }
+  // 1-2 chars: 12
+  // (Não faz nada)
+
+  return v;
 }
 
 /*
@@ -137,8 +173,8 @@ function render(list, term = '') {
 function applyFilters() {
   const term = norm(q.value);
   const c = cat.value;
-  // CORREÇÃO: Garante que 'produtos' exista, mesmo que vazio
-  let list = window.produtos || []; 
+  let list = (typeof produtos !== 'undefined') ? produtos : [];
+
 
   if (c) list = list.filter(p => p.categoria === c);
 
@@ -181,12 +217,23 @@ function openModal() {
   __modalOpener = document.activeElement;
   document.addEventListener('keydown', __trapHandler = __trapKeydown);
   setTimeout(() => {
-    mQtd.focus();
+    // Foca no primeiro campo editável (Produto se for curinga, senão Qtd)
+    if (!mProduto.readOnly) {
+      mProduto.focus();
+    } else {
+      mQtd.focus();
+    }
   }, 50);
 }
 
 function closeModal() {
   bk.style.display = 'none';
+  
+  // Garante que os campos voltem a ser readonly ao fechar
+  mProduto.readOnly = true;
+  mCod.readOnly = true;
+  mCat.readOnly = true;
+
   if (__trapHandler) {
     document.removeEventListener('keydown', __trapHandler);
     __trapHandler = null;
@@ -219,6 +266,21 @@ function validateAdicionar() {
   
   const valor = parseFloat(mValor.value.replace(',', '.')) || 0;
   if (!(valor > 0)) return 'Valor do item inválido.';
+  
+  // CORREÇÃO: Validação do item curinga
+  const nome = mProduto.value.trim();
+  const sku = mCod.value.trim();
+
+  if (!nome) {
+    return 'O nome do produto é obrigatório.';
+  }
+  if (!sku) {
+    return 'O SKU do produto é obrigatório.';
+  }
+  // Evita que o usuário adicione o item com o SKU padrão "PRODUTO-AVULSO"
+  if (sku === SKU_CURINGA && !mCod.readOnly) {
+    return 'Por favor, digite um SKU único para este produto.';
+  }
   
   return null;
 }
@@ -315,6 +377,7 @@ function renderizarCarrinho() {
   } else {
     cartItemsList.style.display = 'grid';
     cartEmptyMsg.style.display = 'none';
+    // A validação 'validateCheckout()' controlará se os botões estão realmente aptos
     btnEnviarCheckout.disabled = false;
     btnGerarPdf.disabled = false;
 
@@ -374,10 +437,10 @@ function validateCheckout() {
     showToast('O campo "Nome do Cliente" é obrigatório.', true);
     return false;
   }
-  if (!clienteCnpj.value.trim()) {
+  /**if (!clienteCnpj.value.trim()) {
     showToast('O campo "CNPJ" é obrigatório.', true);
     return false;
-  }
+  }*/
   if (!representanteComercial.value.trim()) {
     showToast('O campo "Representante Comercial" é obrigatório.', true);
     return false;
@@ -391,10 +454,10 @@ function validateCheckout() {
 
 /** Monta a MENSAGEM FINAL do pedido (com dados do cliente + itens). */
 function buildCheckoutMessage() {
-  const hNome = clienteNome.value || 'Não informado';
-  const hCnpj = clienteCnpj.value || 'Não informado';
-  const hRep = representanteComercial.value || 'Não informado';
-  const hResp = clienteResponsavel.value || 'Não informado';
+  const hNome = clienteNome.value.trim() || 'Não informado';
+  const hCnpj = clienteCnpj.value.trim() || 'Não informado';
+  const hRep = representanteComercial.value.trim() || 'Não informado';
+  const hResp = clienteResponsavel.value.trim() || 'Não informado';
   const obsGerais = checkoutObs.value.trim() || 'Nenhuma';
 
   const linhas = [
@@ -627,6 +690,7 @@ function showToast(msg, isErr = false) {
   clearTimeout(toastTimer);
   toast.textContent = msg;
   toast.style.display = 'block';
+  // CORREÇÃO: Usando a cor de erro correta (var(--err))
   toast.style.borderColor = isErr ? 'var(--err)' : 'var(--ok)';
   toast.style.background = isErr ? 'var(--err)' : '#0f172a';
   toast.style.color = isErr ? '#FFF' : '#e2e8f0';
@@ -641,11 +705,14 @@ function onScroll() {
 
 // Funções de Zoom
 function showZoom(e) {
+  // A lógica de zoom só deve ser acionada pelo 'mousedown' ou 'touchstart'
+  if (e.type === 'mousedown' && e.button !== 0) return; // Ignora clique direito/meio
+
   const cardImg = e.target.closest('.card-img');
   if (!cardImg) return;
   
   const img = cardImg.querySelector('img');
-  if (!img || !img.src || img.src.includes('placehold.co')) return; // Não dá zoom em placeholder
+  if (!img || !img.src || img.src.includes('placehold.co')) return;
 
   e.preventDefault(); 
   
@@ -655,6 +722,7 @@ function showZoom(e) {
 
 function hideZoom() {
   zoomOverlay.classList.remove('visible');
+  // Atraso para a animação de fade-out terminar antes de limpar o src
   setTimeout(() => { zoomOverlayImg.src = ''; }, 200);
 }
 
@@ -672,6 +740,13 @@ function setupEventListeners() {
   limpar.addEventListener('click', () => {
     q.value = '';
     cat.value = '';
+    
+    // CORREÇÃO: Limpa também os campos do cliente
+    /*clienteNome.value = '';
+    clienteCnpj.value = '';
+    representanteComercial.value = '';
+    clienteResponsavel.value = '';*/
+    
     applyFilters();
     showToast('Filtros limpos');
   });
@@ -680,22 +755,44 @@ function setupEventListeners() {
   grid.addEventListener('click', (ev) => {
     const btn = ev.target.closest('.pedir');
     if (!btn) return;
+    
+    // Impede que o clique no botão de "Adicionar" acione o zoom
+    ev.preventDefault(); 
+    ev.stopPropagation(); 
+
     const card = ev.target.closest('.card');
-    mProduto.value = card.dataset.nome || '';
-    mCod.value = card.dataset.cod || '';
-    mCat.value = card.dataset.cat || '';
+    const sku = card.dataset.cod || '';
+
+    if (sku === SKU_CURINGA) {
+      // É O ITEM CURINGA
+      mProduto.value = '';
+      mCod.value = ''; // Limpa para o usuário preencher
+      mCat.value = 'Avulso';
+      mProduto.readOnly = false;
+      mCod.readOnly = false;
+      mCat.readOnly = false;
+    } else {
+      // É UM PRODUTO NORMAL
+      mProduto.value = card.dataset.nome || '';
+      mCod.value = sku;
+      mCat.value = card.dataset.cat || '';
+      mProduto.readOnly = true;
+      mCod.readOnly = true;
+      mCat.readOnly = true;
+    }
+
     mQtd.value = 1;
-    mValor.value = ''; // Reseta campos do item
+    mValor.value = ''; 
     mObs.value = '';
     openModal();
   });
   
   // --- Grid (Zoom da Imagem) ---
-  // Diferencia eventos de toque e mouse para melhor performance mobile
   if (isMobile()) {
     grid.addEventListener('touchstart', showZoom, { passive: true });
   } else {
-    grid.addEventListener('mousedown', showZoom);
+    // 'mousedown' previne o "arrastar" fantasma da imagem
+    grid.addEventListener('mousedown', showZoom); 
   }
 
   // --- Eventos para fechar o zoom ---
@@ -703,7 +800,8 @@ function setupEventListeners() {
   zoomOverlay.addEventListener('mouseleave', hideZoom);
   zoomOverlay.addEventListener('touchend', hideZoom);
   zoomOverlay.addEventListener('touchcancel', hideZoom);
-  zoomOverlay.addEventListener('click', hideZoom); // Fallback de clique
+  // Fallback de clique simples para fechar
+  zoomOverlay.addEventListener('click', hideZoom); 
 
   // --- Modal de Item (Ações) ---
   btnAdicionar.addEventListener('click', adicionarAoCarrinho);
@@ -713,14 +811,18 @@ function setupEventListeners() {
   });
 
   // --- Helpers de Formulário (Máscaras e Validações) ---
-  clienteCnpj.addEventListener('input', () => {
-    // Remove qualquer letra
-    clienteCnpj.value = clienteCnpj.value.replace(/[a-zA-Z]/g, '');
+  clienteCnpj.addEventListener('input', (e) => {
+    // Remove qualquer letra (deixa números e símbolos)
+    e.target.value = maskCNPJ(e.target.value);
   });
   
   mValor.addEventListener('input', () => {
-     let v = mValor.value.replace(/[^0-9,.]/g, '');
-     v = v.replace('.', ',');
+     // Permite apenas números e UMA vírgula
+     let v = mValor.value.replace(/[^0-9,]/g, ''); // Remove tudo exceto números e vírgula
+     v = v.replace(/,+/g, ','); // Garante apenas uma vírgula
+     if (v.split(',').length > 2) {
+        v = v.substring(0, v.lastIndexOf(',')) + v.substring(v.lastIndexOf(',') + 1);
+     }
      mValor.value = v;
   });
 
@@ -769,10 +871,16 @@ function setupEventListeners() {
 
 /** Função principal de inicialização. */
 function init() {
-  // Garante que 'produtos' exista, mesmo que vazio
-  if (typeof produtos === 'undefined') {
-    console.warn('Arquivo "products.js" não encontrado. Carregando com 0 produtos.');
-    window.produtos = []; 
+  // CORREÇÃO: Checagem de segurança para o 'products.js'
+  if (typeof produtos === 'undefined' || !Array.isArray(produtos)) {
+    console.error('products.js não foi carregado ou "produtos" não é um array.');
+    // Trava a UI e informa o usuário que os produtos não carregaram
+    grid.innerHTML = '<p style="color: var(--err); text-align: center; grid-column: 1 / -1;">Erro fatal: A lista de produtos não pôde ser carregada. Verifique o console e recarregue a página.</p>';
+    // Desativa os filtros se não houver produtos
+    q.disabled = true;
+    cat.disabled = true;
+    limpar.disabled = true;
+    return; // Para a execução
   }
   
   // Verifica se o jsPDF foi carregado
@@ -790,6 +898,7 @@ function init() {
     };
   }
 
+  // CORREÇÃO: Executa setupEventListeners PRIMEIRO
   setupEventListeners();
   setupClientDataPersistence();
   onScroll();
@@ -803,4 +912,3 @@ if (document.readyState === 'loading') {
 } else {
   init();
 }
-
